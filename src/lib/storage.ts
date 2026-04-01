@@ -1,4 +1,4 @@
-import type { ReaderDocument, SavedWord } from './reader-types'
+import type { ReaderDocument, ReaderSection, SavedWord } from './reader-types'
 import { cloneReaderDocument } from './document'
 
 const DOCUMENT_STORAGE_KEY = 'chinese-poem:reader-document:v1'
@@ -33,19 +33,112 @@ function writeJson<T>(key: string, value: T): void {
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
+function normalizeReaderDocument(value: unknown): ReaderDocument | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const candidate = value as Record<string, unknown>
+  if (
+    typeof candidate.id !== 'string' ||
+    typeof candidate.title !== 'string' ||
+    typeof candidate.sourceName !== 'string' ||
+    typeof candidate.importedAt !== 'string' ||
+    !Array.isArray(candidate.sections)
+  ) {
+    return null
+  }
+
+  return {
+    id: candidate.id,
+    title: candidate.title,
+    sourceName: candidate.sourceName,
+    importedAt: candidate.importedAt,
+    sections: candidate.sections
+      .map((section) => normalizeStoredSection(section))
+      .filter((section): section is ReaderSection => section !== null),
+  }
+}
+
+function normalizeStoredSection(value: unknown): ReaderSection | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const candidate = value as Record<string, unknown>
+  if (
+    typeof candidate.id !== 'string' ||
+    typeof candidate.title !== 'string' ||
+    typeof candidate.chinese !== 'string'
+  ) {
+    return null
+  }
+
+  const translation =
+    typeof candidate.translation === 'string'
+      ? candidate.translation
+      : typeof candidate.english === 'string'
+        ? candidate.english
+        : ''
+
+  return {
+    id: candidate.id,
+    title: candidate.title,
+    chinese: candidate.chinese,
+    translation,
+  }
+}
+
+function normalizeSavedWord(value: unknown): SavedWord | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const candidate = value as Record<string, unknown>
+  const word =
+    typeof candidate.word === 'string'
+      ? candidate.word
+      : typeof candidate.term === 'string'
+        ? candidate.term
+        : null
+
+  if (
+    typeof candidate.id !== 'string' ||
+    !word ||
+    typeof candidate.createdAt !== 'string'
+  ) {
+    return null
+  }
+
+  return {
+    id: candidate.id,
+    word,
+    pinyin: typeof candidate.pinyin === 'string' ? candidate.pinyin : undefined,
+    definition:
+      typeof candidate.definition === 'string' ? candidate.definition : undefined,
+    sectionId:
+      typeof candidate.sectionId === 'string' ? candidate.sectionId : undefined,
+    context:
+      typeof candidate.context === 'string'
+        ? candidate.context
+        : typeof candidate.sectionTitle === 'string'
+          ? candidate.sectionTitle
+          : typeof candidate.note === 'string'
+            ? candidate.note
+            : undefined,
+    createdAt: candidate.createdAt,
+  }
+}
+
 export function loadReaderDocument(): ReaderDocument | null {
-  const stored = readJson<ReaderDocument | null>(DOCUMENT_STORAGE_KEY, null)
-  return stored ? cloneReaderDocument(stored) : null
+  const stored = readJson<unknown>(DOCUMENT_STORAGE_KEY, null)
+  const document = normalizeReaderDocument(stored)
+  return document ? cloneReaderDocument(document) : null
 }
 
 export function saveReaderDocument(document: ReaderDocument): ReaderDocument {
-  const nextDocument = {
-    ...document,
-    updatedAt: new Date().toISOString(),
-  }
-
-  writeJson(DOCUMENT_STORAGE_KEY, nextDocument)
-  return nextDocument
+  writeJson(DOCUMENT_STORAGE_KEY, document)
+  return document
 }
 
 export function clearReaderDocument(): void {
@@ -58,7 +151,13 @@ export function clearReaderDocument(): void {
 
 export function loadSavedWords(): SavedWord[] {
   const stored = readJson<unknown>(SAVED_WORDS_STORAGE_KEY, [])
-  return Array.isArray(stored) ? (stored as SavedWord[]) : []
+  if (!Array.isArray(stored)) {
+    return []
+  }
+
+  return stored
+    .map(normalizeSavedWord)
+    .filter((word): word is SavedWord => word !== null)
 }
 
 export function saveSavedWords(words: SavedWord[]): SavedWord[] {
@@ -73,9 +172,9 @@ export function upsertSavedWord(
   const nextWords = [...words]
   const existingIndex = nextWords.findIndex(
     (entry) =>
-      entry.term === word.term &&
+      entry.word === word.word &&
       entry.sectionId === word.sectionId &&
-      entry.reading === word.reading,
+      entry.pinyin === word.pinyin,
   )
 
   if (existingIndex >= 0) {
@@ -97,8 +196,8 @@ export function removeSavedWord(
 }
 
 export function createSavedWord(
-  term: string,
-  details: Omit<SavedWord, 'id' | 'term' | 'createdAt'> = {},
+  word: string,
+  details: Omit<SavedWord, 'id' | 'word' | 'createdAt'> = {},
 ): SavedWord {
   return {
     id:
@@ -107,7 +206,7 @@ export function createSavedWord(
         : `saved-word-${Date.now().toString(36)}-${Math.random()
             .toString(36)
             .slice(2, 10)}`,
-    term,
+    word,
     createdAt: new Date().toISOString(),
     ...details,
   }

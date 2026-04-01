@@ -2,7 +2,6 @@ import type {
   ReaderDocument,
   ReaderImportOptions,
   ReaderSection,
-  ReaderSectionKind,
 } from './reader-types'
 
 const HEADING_RE = /^#{1,2}\s+(.+?)\s*$/
@@ -11,12 +10,12 @@ const MULTIPLE_BLANK_LINES_RE = /\n{3,}/g
 
 type SectionBuffer = {
   title: string
-  kind: ReaderSectionKind
   chinese: string[]
-  english: string[]
+  translation: string[]
   rawLines: string[]
   hasDivider: boolean
-  inEnglish: boolean
+  inTranslation: boolean
+  fromHeading: boolean
 }
 
 function createId(prefix: string): string {
@@ -67,40 +66,36 @@ function createSection(
   }
 
   const chinese = normalizeBlock(buffer.chinese)
-  const english = normalizeBlock(buffer.english)
-  const rawText = normalizeBlock(buffer.rawLines)
+  const translation = normalizeBlock(buffer.translation)
 
-  if (!chinese && !english && !rawText && buffer.kind !== 'markdown-heading') {
+  if (!chinese && !translation && !buffer.fromHeading) {
     return null
   }
 
   return {
     id: createId(`section-${index}`),
     title: buffer.title || fallbackTitle,
-    kind: buffer.kind,
     chinese,
-    english,
-    rawText,
-    hasTranslationDivider: buffer.hasDivider,
+    translation,
   }
 }
 
-function createBuffer(title: string, kind: ReaderSectionKind): SectionBuffer {
+function createBuffer(title: string, fromHeading: boolean): SectionBuffer {
   return {
     title,
-    kind,
     chinese: [],
-    english: [],
+    translation: [],
     rawLines: [],
     hasDivider: false,
-    inEnglish: false,
+    inTranslation: false,
+    fromHeading,
   }
 }
 
 function pushTextLine(buffer: SectionBuffer, line: string): void {
   buffer.rawLines.push(line)
-  if (buffer.inEnglish) {
-    buffer.english.push(line)
+  if (buffer.inTranslation) {
+    buffer.translation.push(line)
     return
   }
 
@@ -131,17 +126,17 @@ function parseMarkdownSections(
     const heading = parseHeading(line)
     if (heading) {
       flushBuffer()
-      buffer = createBuffer(heading, 'markdown-heading')
+      buffer = createBuffer(heading, true)
       continue
     }
 
     if (!buffer) {
-      buffer = createBuffer(fallbackTitle, 'plain-paragraph')
+      buffer = createBuffer(fallbackTitle, false)
     }
 
-    if (DIVIDER_RE.test(line) && !buffer.inEnglish) {
+    if (DIVIDER_RE.test(line) && !buffer.inTranslation) {
       buffer.hasDivider = true
-      buffer.inEnglish = true
+      buffer.inTranslation = true
       buffer.rawLines.push(line)
       continue
     }
@@ -166,24 +161,19 @@ function parsePlainSections(
     const chineseLines =
       dividerIndex >= 0 ? lines.slice(0, dividerIndex) : lines
     const englishLines = dividerIndex >= 0 ? lines.slice(dividerIndex + 1) : []
-    const rawLines = lines
 
     const chinese = normalizeBlock(chineseLines)
-    const english = normalizeBlock(englishLines)
-    const rawText = normalizeBlock(rawLines)
+    const translation = normalizeBlock(englishLines)
 
-    if (!chinese && !english && !rawText) {
+    if (!chinese && !translation) {
       return
     }
 
     sections.push({
       id: createId(`section-${index + 1}`),
       title: `${fallbackTitle} ${index + 1}`,
-      kind: 'plain-paragraph',
       chinese,
-      english,
-      rawText,
-      hasTranslationDivider: dividerIndex >= 0,
+      translation,
     })
   })
 
@@ -233,10 +223,7 @@ export function parseReaderDocument(
     id: options.id ?? createId('document'),
     title,
     sourceName,
-    format: hasHeading ? 'markdown' : 'text',
     importedAt,
-    updatedAt: importedAt,
-    rawText: normalizedText,
     sections,
   }
 }
