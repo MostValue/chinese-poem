@@ -2,23 +2,18 @@ export type CedictSense = readonly [pinyin: string, english: string]
 
 export type CedictRawDictionary = Record<string, CedictSense[]>
 
-export interface DictionarySense {
+export interface DictionaryEntry {
   readonly pinyin: string
   readonly english: string
 }
 
-export interface DictionaryEntry {
-  readonly word: string
-  readonly senses: readonly DictionarySense[]
-}
-
-export interface DictionaryIndex {
-  readonly entries: ReadonlyMap<string, DictionaryEntry>
+export interface DictionaryResource {
+  readonly entries: ReadonlyMap<string, DictionaryEntry[]>
   readonly maxWordLength: number
 }
 
-export type TokenKind =
-  | 'dictionary-word'
+export type TokenType =
+  | 'word'
   | 'latin'
   | 'whitespace'
   | 'punctuation'
@@ -26,17 +21,15 @@ export type TokenKind =
   | 'unknown'
 
 export interface ReaderToken {
-  readonly kind: TokenKind
-  readonly text: string
-  readonly start: number
-  readonly end: number
-  readonly clickable: boolean
-  readonly entry?: DictionaryEntry
+  readonly value: string
+  readonly type: TokenType
+  readonly interactive: boolean
+  readonly lookupKey?: string
 }
 
 const DICTIONARY_URL = '/data/cedict.json'
 
-let cachedDictionary: Promise<DictionaryIndex> | null = null
+let cachedDictionary: Promise<DictionaryResource> | null = null
 
 const hanRegex = /\p{Script=Han}/u
 const latinTokenStartRegex = /[\p{L}\p{N}]/u
@@ -46,8 +39,8 @@ const punctuationRegex = /[\p{P}\p{S}]/u
 
 export function normalizeCedictDictionary(
   raw: CedictRawDictionary,
-): DictionaryIndex {
-  const entries = new Map<string, DictionaryEntry>()
+): DictionaryResource {
+  const entries = new Map<string, DictionaryEntry[]>()
   let maxWordLength = 1
 
   for (const [word, senses] of Object.entries(raw)) {
@@ -55,7 +48,7 @@ export function normalizeCedictDictionary(
       continue
     }
 
-    const normalizedSenses: DictionarySense[] = []
+    const normalizedSenses: DictionaryEntry[] = []
 
     for (const sense of senses) {
       const [pinyin, english] = sense
@@ -76,10 +69,7 @@ export function normalizeCedictDictionary(
       continue
     }
 
-    entries.set(word, {
-      word,
-      senses: normalizedSenses,
-    })
+    entries.set(word, normalizedSenses)
 
     maxWordLength = Math.max(maxWordLength, Array.from(word).length)
   }
@@ -90,7 +80,7 @@ export function normalizeCedictDictionary(
   }
 }
 
-export async function loadCedictDictionary(): Promise<DictionaryIndex> {
+export async function loadCedictDictionary(): Promise<DictionaryResource> {
   if (!cachedDictionary) {
     cachedDictionary = fetch(DICTIONARY_URL)
       .then(async (response) => {
@@ -110,14 +100,14 @@ export async function loadCedictDictionary(): Promise<DictionaryIndex> {
 
 export function lookupWord(
   word: string,
-  dictionary: DictionaryIndex,
-): DictionaryEntry | undefined {
+  dictionary: DictionaryResource,
+): DictionaryEntry[] | undefined {
   return dictionary.entries.get(word)
 }
 
 export function tokenizeReaderText(
   text: string,
-  dictionary: DictionaryIndex,
+  dictionary: DictionaryResource,
 ): ReaderToken[] {
   const codePoints = Array.from(text)
   const offsets = new Array<number>(codePoints.length + 1)
@@ -144,11 +134,9 @@ export function tokenizeReaderText(
       }
 
       tokens.push({
-        kind: 'whitespace',
-        text: text.slice(start, offsets[end]),
-        start,
-        end: offsets[end],
-        clickable: false,
+        type: 'whitespace',
+        value: text.slice(start, offsets[end]),
+        interactive: false,
       })
       i = end
       continue
@@ -162,11 +150,9 @@ export function tokenizeReaderText(
       }
 
       tokens.push({
-        kind: 'latin',
-        text: text.slice(start, offsets[end]),
-        start,
-        end: offsets[end],
-        clickable: false,
+        type: 'latin',
+        value: text.slice(start, offsets[end]),
+        interactive: false,
       })
       i = end
       continue
@@ -178,7 +164,7 @@ export function tokenizeReaderText(
         codePoints.length - i,
       )
       let matchedWord = ''
-      let matchedEntry: DictionaryEntry | undefined
+      let matchedEntries: DictionaryEntry[] | undefined
 
       for (let length = maxLength; length > 0; length -= 1) {
         const candidate = text.slice(start, offsets[i + length])
@@ -186,33 +172,29 @@ export function tokenizeReaderText(
 
         if (entry) {
           matchedWord = candidate
-          matchedEntry = entry
+          matchedEntries = entry
           break
         }
       }
 
-      if (matchedEntry) {
+      if (matchedEntries) {
         const end = i + Array.from(matchedWord).length
 
         tokens.push({
-          kind: 'dictionary-word',
-          text: matchedWord,
-          start,
-          end: offsets[end],
-          clickable: true,
-          entry: matchedEntry,
+          type: 'word',
+          value: matchedWord,
+          interactive: true,
+          lookupKey: matchedWord,
         })
         i = end
         continue
       }
 
       tokens.push({
-        kind: 'dictionary-word',
-        text: current,
-        start,
-        end: offsets[i + 1],
-        clickable: true,
-        entry: dictionary.entries.get(current),
+        type: 'word',
+        value: current,
+        interactive: Boolean(dictionary.entries.get(current)),
+        lookupKey: dictionary.entries.get(current) ? current : undefined,
       })
       i += 1
       continue
@@ -220,22 +202,18 @@ export function tokenizeReaderText(
 
     if (punctuationRegex.test(current)) {
       tokens.push({
-        kind: 'punctuation',
-        text: current,
-        start,
-        end: offsets[i + 1],
-        clickable: false,
+        type: 'punctuation',
+        value: current,
+        interactive: false,
       })
       i += 1
       continue
     }
 
     tokens.push({
-      kind: 'symbol',
-      text: current,
-      start,
-      end: offsets[i + 1],
-      clickable: false,
+      type: 'symbol',
+      value: current,
+      interactive: false,
     })
     i += 1
   }
@@ -245,9 +223,9 @@ export function tokenizeReaderText(
 
 export function findLongestDictionaryMatch(
   text: string,
-  dictionary: DictionaryIndex,
+  dictionary: DictionaryResource,
   startIndex = 0,
-): DictionaryEntry | undefined {
+): { readonly lookupKey: string; readonly entries: DictionaryEntry[] } | undefined {
   const codePoints = Array.from(text)
   const start = Math.max(0, Math.min(startIndex, codePoints.length))
   const limit = Math.min(dictionary.maxWordLength, codePoints.length - start)
@@ -257,7 +235,10 @@ export function findLongestDictionaryMatch(
     const entry = dictionary.entries.get(candidate)
 
     if (entry) {
-      return entry
+      return {
+        lookupKey: candidate,
+        entries: entry,
+      }
     }
   }
 
