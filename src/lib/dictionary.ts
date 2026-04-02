@@ -32,8 +32,8 @@ const DICTIONARY_URL = '/data/cedict.json'
 let cachedDictionary: Promise<DictionaryResource> | null = null
 
 const hanRegex = /\p{Script=Han}/u
-const latinTokenStartRegex = /[\p{L}\p{N}]/u
-const latinTokenContinueRegex = /[-\p{L}\p{N}_'’]/u
+const latinTokenStartRegex = /[\p{Script=Latin}\p{N}]/u
+const latinTokenContinueRegex = /[-\p{Script=Latin}\p{N}_'’]/u
 const whitespaceRegex = /\s/u
 const punctuationRegex = /[\p{P}\p{S}]/u
 
@@ -142,22 +142,6 @@ export function tokenizeReaderText(
       continue
     }
 
-    if (isLatinTokenStartChar(current)) {
-      let end = i + 1
-
-      while (end < codePoints.length && isLatinTokenContinueChar(codePoints[end])) {
-        end += 1
-      }
-
-      tokens.push({
-        type: 'latin',
-        value: text.slice(start, offsets[end]),
-        interactive: false,
-      })
-      i = end
-      continue
-    }
-
     if (isHanCharacter(current)) {
       const maxLength = Math.min(
         dictionary.maxWordLength,
@@ -197,6 +181,22 @@ export function tokenizeReaderText(
         lookupKey: dictionary.entries.get(current) ? current : undefined,
       })
       i += 1
+      continue
+    }
+
+    if (isLatinTokenStartChar(current)) {
+      let end = i + 1
+
+      while (end < codePoints.length && isLatinTokenContinueChar(codePoints[end])) {
+        end += 1
+      }
+
+      tokens.push({
+        type: 'latin',
+        value: text.slice(start, offsets[end]),
+        interactive: false,
+      })
+      i = end
       continue
     }
 

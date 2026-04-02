@@ -1,73 +1,56 @@
-# React + TypeScript + Vite
+# Grandpa's Reading Room
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A private MVP reading app for working through Chinese source text alongside an English translation draft.
 
-Currently, two official plugins are available:
+## What it does
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Imports `.md` and `.txt` files directly in the browser
+- Parses markdown headings into reading sections
+- Supports `---` inside a section to split Chinese source text from English translation
+- Persists the active document and saved vocabulary locally with `localStorage`
+- Loads CC-CEDICT from `public/data/cedict.json` for offline word lookup
+- Lets you click Chinese words in the reader and save them into a lightweight glossary
+- Exports the current document plus saved glossary entries as JSON
 
-## React Compiler
+## Markdown format
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```md
+# Chapter One
+第一段中文。
+第二段中文。
+---
+First draft of the English translation.
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Chapter Two
+另一段中文。
+---
+Another translation draft.
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+If there are no headings, the importer falls back to blank-line blocks and creates numbered sections.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Development
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
+
+Other useful commands:
+
+```bash
+npm run lint
+npm run build
+```
+
+## Dictionary data
+
+The offline lookup uses a prebuilt CC-CEDICT JSON file at `public/data/cedict.json`.
+
+If you want to rebuild that file from a fresh CC-CEDICT source dump, use the helper script:
+
+```bash
+node scripts/build-dict.cjs
+```
+
+The current script expects the raw dictionary file at `/tmp/cedict_ts.u8`.
